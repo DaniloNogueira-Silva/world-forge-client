@@ -168,6 +168,14 @@ button:disabled {
   gap: 1rem;
 }
 
+.canvas__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
 .section-title {
   margin: 0 0 1rem;
   font-size: 1.2rem;
