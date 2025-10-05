@@ -16,10 +16,27 @@ export type World = {
   userId: string;
 };
 
+export const ENTITY_RELATION_TYPES = [
+  "ORIGIN",
+  "FRIEND",
+  "ENEMY",
+  "AFFILIATE",
+  "WIELDS",
+] as const;
+
+export type EntityRelationType = (typeof ENTITY_RELATION_TYPES)[number];
+
+export type EntityRelations = Partial<Record<EntityRelationType, string[]>>;
+
 export type EntityPayload = {
   name: string;
   entity_type: string;
   attributes: Record<string, string>;
+};
+
+export type EntityRelationPayload = {
+  targetEntityId: string;
+  type: EntityRelationType;
 };
 
 export type Entity = {
@@ -27,6 +44,7 @@ export type Entity = {
   name: string;
   entity_type: string;
   attributes: Record<string, string>;
+  relations: EntityRelations;
   worldId: string;
   created_at: string;
   updated_at: string;
@@ -76,6 +94,20 @@ export async function createEntity(
 ): Promise<Entity> {
   const { data } = await axios.post<Entity>(
     `${BASE_URL}/worlds/${worldId}/entities`,
+    payload,
+    authHeader(token)
+  );
+  return data;
+}
+
+export async function createEntityRelation(
+  token: string,
+  worldId: string,
+  entityId: string,
+  payload: EntityRelationPayload
+): Promise<Entity> {
+  const { data } = await axios.post<Entity>(
+    `${BASE_URL}/worlds/${worldId}/entities/${entityId}/relations`,
     payload,
     authHeader(token)
   );

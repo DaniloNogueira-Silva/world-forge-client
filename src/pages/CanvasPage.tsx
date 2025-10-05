@@ -10,9 +10,13 @@ import {
 import { useAuth } from "../context/AuthContext";
 import {
   createEntity,
+  createEntityRelation,
   fetchEntities,
+  ENTITY_RELATION_TYPES,
   type Entity,
   type EntityPayload,
+  type EntityRelationPayload,
+  type EntityRelationType,
   type World,
 } from "../api/worlds";
 
@@ -48,6 +52,21 @@ const createId = () =>
 const CARD_WIDTH = 260;
 const CARD_HEIGHT = 180;
 
+const RELATION_COLORS: Record<EntityRelationType, string> = {
+  ORIGIN: "#38bdf8",
+  FRIEND: "#4ade80",
+  ENEMY: "#f87171",
+  AFFILIATE: "#facc15",
+  WIELDS: "#a855f7",
+};
+
+const RELATION_TYPE_SET = new Set<EntityRelationType>(ENTITY_RELATION_TYPES);
+
+type EntityRelationForm = {
+  type: EntityRelationType;
+  targetEntityId: string;
+};
+
 export function CanvasPage({ world, onBack }: CanvasPageProps) {
   const { token } = useAuth();
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -71,6 +90,12 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
   const dragMovedRef = useRef(false);
   const pointerIdRef = useRef<number | null>(null);
   const dragTargetRef = useRef<HTMLElement | null>(null);
+  const [relationForm, setRelationForm] = useState<EntityRelationForm>({
+    type: ENTITY_RELATION_TYPES[0],
+    targetEntityId: "",
+  });
+  const [isAddingRelation, setIsAddingRelation] = useState(false);
+  const [relationError, setRelationError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadEntities = async () => {
@@ -79,7 +104,12 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
       setError(null);
       try {
         const response = await fetchEntities(token, world.id);
-        setEntities(response);
+        setEntities(
+          response.map((entity) => ({
+            ...entity,
+            relations: entity.relations ?? {},
+          }))
+        );
       } catch (err) {
         if (err instanceof Error) {
           setError(err.message);
@@ -141,7 +171,11 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
       };
 
       const newEntity = await createEntity(token, world.id, payload);
-      setEntities((prev) => [newEntity, ...prev]);
+      const normalizedEntity: Entity = {
+        ...newEntity,
+        relations: newEntity.relations ?? {},
+      };
+      setEntities((prev) => [normalizedEntity, ...prev]);
       setForm({ name: "", entity_type: ENTITY_TYPES[0], attributes: {} });
       setAttributeFields([{ id: createId(), key: "", value: "" }]);
       setIsCreateModalOpen(false);
@@ -163,6 +197,14 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
       ),
     [entities]
   );
+
+  useEffect(() => {
+    if (!selectedEntity) return;
+    const latest = entities.find((entity) => entity.id === selectedEntity.id);
+    if (latest && latest !== selectedEntity) {
+      setSelectedEntity(latest);
+    }
+  }, [entities, selectedEntity]);
 
   useEffect(() => {
     setPositions((prev) => {
@@ -260,6 +302,12 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isCreateModalOpen, selectedEntity]);
 
+  useEffect(() => {
+    if (!selectedEntity) return;
+    setRelationForm({ type: ENTITY_RELATION_TYPES[0], targetEntityId: "" });
+    setRelationError(null);
+  }, [selectedEntity]);
+
   const handlePointerDown = (
     event: ReactPointerEvent<HTMLElement>,
     entityId: string
@@ -295,6 +343,145 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
     setSelectedEntity(entity);
   };
 
+  const handleRelationFormChange = (
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    const { name, value } = event.target;
+    setRelationError(null);
+    setRelationForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleAddRelation = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!token || !selectedEntity) return;
+    if (!relationForm.targetEntityId) {
+      setRelationError("Selecione uma entidade alvo.");
+      return;
+    }
+
+    setIsAddingRelation(true);
+    setRelationError(null);
+    try {
+      const payload: EntityRelationPayload = {
+        type: relationForm.type,
+        targetEntityId: relationForm.targetEntityId,
+      };
+      const updatedEntity = await createEntityRelation(
+        token,
+        world.id,
+        selectedEntity.id,
+        payload
+      );
+      const normalizedEntity: Entity = {
+        ...updatedEntity,
+        relations: updatedEntity.relations ?? {},
+      };
+      setEntities((prev) =>
+        prev.map((entity) =>
+          entity.id === normalizedEntity.id ? normalizedEntity : entity
+        )
+      );
+      setSelectedEntity(normalizedEntity);
+      setRelationForm((prev) => ({ ...prev, targetEntityId: "" }));
+    } catch (err) {
+      if (err instanceof Error) {
+        setRelationError(err.message);
+      } else {
+        setRelationError("Não foi possível criar a relação.");
+      }
+    } finally {
+      setIsAddingRelation(false);
+    }
+  };
+
+  const entityNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    entities.forEach((entity) => {
+      map.set(entity.id, entity.name);
+    });
+    return map;
+  }, [entities]);
+
+  const relationEdges = useMemo(() => {
+    const edges: Array<{
+      id: string;
+      sourceId: string;
+      targetId: string;
+      type: EntityRelationType;
+    }> = [];
+
+    entities.forEach((entity) => {
+      const relations = entity.relations ?? {};
+      Object.entries(relations).forEach(([typeKey, targetIds]) => {
+        if (!Array.isArray(targetIds)) return;
+        if (!RELATION_TYPE_SET.has(typeKey as EntityRelationType)) return;
+        targetIds.forEach((targetId) => {
+          if (!positions[entity.id] || !positions[targetId]) return;
+          edges.push({
+            id: `${entity.id}:${typeKey}:${targetId}`,
+            sourceId: entity.id,
+            targetId,
+            type: typeKey as EntityRelationType,
+          });
+        });
+      });
+    });
+
+    return edges;
+  }, [entities, positions]);
+
+  const boardDimensions = useMemo(() => {
+    const values = Object.values(positions);
+    if (values.length === 0) {
+      return { width: 1200, height: 800 };
+    }
+
+    const maxX = Math.max(
+      ...values.map((position) => position.x + CARD_WIDTH)
+    );
+    const maxY = Math.max(
+      ...values.map((position) => position.y + CARD_HEIGHT)
+    );
+
+    return {
+      width: Math.max(1200, maxX + 160),
+      height: Math.max(800, maxY + 160),
+    };
+  }, [positions]);
+
+  const availableRelationTargets = useMemo(() => {
+    if (!selectedEntity) return [] as Entity[];
+    return entities.filter((entity) => entity.id !== selectedEntity.id);
+  }, [entities, selectedEntity]);
+
+  useEffect(() => {
+    if (
+      relationForm.targetEntityId &&
+      !availableRelationTargets.some(
+        (entity) => entity.id === relationForm.targetEntityId
+      )
+    ) {
+      setRelationForm((prev) => ({ ...prev, targetEntityId: "" }));
+    }
+  }, [availableRelationTargets, relationForm.targetEntityId]);
+
+  const selectedEntityRelations = selectedEntity
+    ? Object.entries(selectedEntity.relations ?? {})
+        .filter(
+          ([typeKey, ids]) =>
+            RELATION_TYPE_SET.has(typeKey as EntityRelationType) &&
+            Array.isArray(ids) &&
+            ids.length > 0
+        )
+        .map(([typeKey, ids]) => ({
+          type: typeKey as EntityRelationType,
+          targets: ids,
+        }))
+    : [];
+
   return (
     <div className="canvas canvas--fullscreen">
       <aside className="canvas__sidebar">
@@ -318,13 +505,81 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
       </aside>
 
       <main className="canvas__surface">
-        <div className="canvas__board" ref={canvasRef}>
+        <div
+          className="canvas__board"
+          ref={canvasRef}
+          style={{
+            minWidth: boardDimensions.width,
+            minHeight: boardDimensions.height,
+          }}
+        >
           {isLoading && (
             <p className="canvas__status">Carregando entidades...</p>
           )}
           {!isLoading && orderedEntities.length === 0 && (
             <p className="canvas__status">Nenhuma entidade criada ainda.</p>
           )}
+          <svg
+            className="entity-relations"
+            width={boardDimensions.width}
+            height={boardDimensions.height}
+          >
+            <defs>
+              {ENTITY_RELATION_TYPES.map((type) => (
+                <marker
+                  key={type}
+                  id={`entity-relation-arrow-${type}`}
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="6"
+                  orient="auto"
+                >
+                  <path
+                    d="M2,2 L10,6 L2,10 Z"
+                    fill={RELATION_COLORS[type] ?? "#38bdf8"}
+                  />
+                </marker>
+              ))}
+            </defs>
+            {relationEdges.map((edge) => {
+              const source = positions[edge.sourceId];
+              const target = positions[edge.targetId];
+              if (!source || !target) return null;
+
+              const startX = source.x + CARD_WIDTH / 2;
+              const startY = source.y + CARD_HEIGHT / 2;
+              const endX = target.x + CARD_WIDTH / 2;
+              const endY = target.y + CARD_HEIGHT / 2;
+
+              const labelX = (startX + endX) / 2;
+              const labelY = (startY + endY) / 2;
+
+              const color = RELATION_COLORS[edge.type] ?? "#38bdf8";
+
+              return (
+                <g key={edge.id} className="entity-relations__edge">
+                  <line
+                    className="entity-relations__line"
+                    x1={startX}
+                    y1={startY}
+                    x2={endX}
+                    y2={endY}
+                    stroke={color}
+                    markerEnd={`url(#entity-relation-arrow-${edge.type})`}
+                  />
+                  <text
+                    className="entity-relations__label"
+                    x={labelX}
+                    y={labelY}
+                    fill={color}
+                  >
+                    {edge.type}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
           {orderedEntities.map((entity) => {
             const position = positions[entity.id] ?? { x: 120, y: 120 };
             const entries = Object.entries(entity.attributes ?? {});
@@ -460,6 +715,83 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
                 )}
               </dl>
             )}
+            <div className="entity-relations-panel">
+              <h3>Relações</h3>
+              {selectedEntityRelations.length === 0 ? (
+                <p className="entity-details__empty">
+                  Nenhuma relação cadastrada.
+                </p>
+              ) : (
+                <ul className="entity-relations__list">
+                  {selectedEntityRelations.map((relation) => (
+                    <li key={relation.type}>
+                      <span className="entity-relations__type">
+                        {relation.type}
+                      </span>
+                      <div className="entity-relations__targets">
+                        {relation.targets.map((targetId) => (
+                          <span key={targetId} className="entity-relations__target">
+                            {entityNameMap.get(targetId) ?? targetId}
+                          </span>
+                        ))}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {availableRelationTargets.length === 0 ? (
+                <p className="entity-relations__hint">
+                  Crie outras entidades para relacioná-las.
+                </p>
+              ) : (
+                <form
+                  className="entity-relations__form"
+                  onSubmit={handleAddRelation}
+                >
+                  <label>
+                    <span>Tipo</span>
+                    <select
+                      name="type"
+                      value={relationForm.type}
+                      onChange={handleRelationFormChange}
+                    >
+                      {ENTITY_RELATION_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Entidade</span>
+                    <select
+                      name="targetEntityId"
+                      value={relationForm.targetEntityId}
+                      onChange={handleRelationFormChange}
+                      required
+                    >
+                      <option value="" disabled>
+                        Selecione uma entidade
+                      </option>
+                      {availableRelationTargets.map((entity) => (
+                        <option key={entity.id} value={entity.id}>
+                          {entity.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {relationError && (
+                    <p className="entity-relations__error">{relationError}</p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isAddingRelation || !relationForm.targetEntityId}
+                  >
+                    {isAddingRelation ? "Criando relação..." : "Adicionar relação"}
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
         </Modal>
       )}

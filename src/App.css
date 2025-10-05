@@ -239,6 +239,32 @@ button:disabled {
   background-size: 48px 48px;
 }
 
+.entity-relations {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 0;
+}
+
+.entity-relations__line {
+  stroke-width: 2.5;
+  fill: none;
+  opacity: 0.75;
+}
+
+.entity-relations__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  paint-order: stroke;
+  stroke: rgba(15, 23, 42, 0.85);
+  stroke-width: 6px;
+  stroke-linejoin: round;
+}
+
 @media (max-width: 960px) {
   .canvas--fullscreen {
     grid-template-columns: 1fr;
@@ -287,6 +313,7 @@ button:disabled {
   cursor: grab;
   user-select: none;
   transition: box-shadow 0.2s ease, transform 0.2s ease;
+  z-index: 1;
 }
 
 .entity-node:active {
@@ -349,6 +376,98 @@ button:disabled {
   color: #94a3b8;
   font-style: italic;
   text-align: right;
+}
+
+.entity-relations-panel {
+  margin-top: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.entity-relations-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #f8fafc;
+}
+
+.entity-relations__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.entity-relations__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.entity-relations__type {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #38bdf8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.entity-relations__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.entity-relations__target {
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  color: #e0e7ff;
+  font-size: 0.8rem;
+}
+
+.entity-relations__hint {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.entity-relations__form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.entity-relations__form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.entity-relations__form label span {
+  color: #cbd5f5;
+  font-weight: 500;
+}
+
+.entity-relations__form select {
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.65);
+  color: inherit;
+}
+
+.entity-relations__error {
+  margin: 0;
+  color: #fca5a5;
+  font-size: 0.85rem;
 }
 
 @media (min-width: 720px) {
