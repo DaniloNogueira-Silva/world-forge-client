@@ -19,6 +19,13 @@ import {
   type EntityRelationType,
   type World,
 } from "../api/worlds";
+import {
+  forceCenter,
+  forceLink,
+  forceManyBody,
+  forceSimulation,
+  type SimulationNodeDatum,
+} from "d3-force";
 
 type CanvasPageProps = {
   world: World;
@@ -60,6 +67,10 @@ type EntityRelationForm = {
   type: EntityRelationType;
   targetEntityId: string;
 };
+
+interface SimulationNode extends SimulationNodeDatum {
+  id: string;
+}
 
 function getEdgeCoordinates(
   sourcePos: CanvasPosition,
@@ -115,6 +126,53 @@ function getEdgeCoordinates(
   return points;
 }
 
+function calculateForceDirectedLayout(
+  entities: Entity[],
+  width: number,
+  height: number
+): Record<string, CanvasPosition> {
+  if (entities.length === 0) {
+    return {};
+  }
+
+  const nodes: SimulationNode[] = entities.map((e) => ({ id: e.id }));
+  const links: { source: string; target: string }[] = [];
+  entities.forEach((sourceEntity) => {
+    Object.values(sourceEntity.relations ?? {}).forEach((targetIds) => {
+      if (Array.isArray(targetIds)) {
+        targetIds.forEach((targetId) => {
+          if (entities.some((e) => e.id === targetId)) {
+            links.push({ source: sourceEntity.id, target: targetId });
+          }
+        });
+      }
+    });
+  });
+
+  const simulation = forceSimulation(nodes)
+    .force(
+      "link",
+      forceLink(links)
+        .id((d: any) => d.id)
+        .distance(CARD_WIDTH + 50)
+    )
+    .force("charge", forceManyBody().strength(-CARD_WIDTH * 2))
+    .force("center", forceCenter(width / 2, height / 2))
+    .stop();
+
+  simulation.tick(300);
+
+  const finalPositions: Record<string, CanvasPosition> = {};
+  simulation.nodes().forEach((node: any) => {
+    finalPositions[node.id] = {
+      x: node.x - CARD_WIDTH / 2,
+      y: node.y - CARD_HEIGHT / 2,
+    };
+  });
+
+  return finalPositions;
+}
+
 export function CanvasPage({ world, onBack }: CanvasPageProps) {
   const { token } = useAuth();
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -147,6 +205,8 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
   const [isAddingRelation, setIsAddingRelation] = useState(false);
   const [relationError, setRelationError] = useState<string | null>(null);
 
+  const initialLayoutDone = useRef(false);
+
   useEffect(() => {
     const loadEntities = async () => {
       if (!token) return;
@@ -173,6 +233,26 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
 
     loadEntities();
   }, [token, world.id]);
+
+  useEffect(() => {
+    // Roda apenas se tivermos entidades e o layout inicial ainda não foi calculado
+    if (entities.length > 0 && !initialLayoutDone.current) {
+      const width = canvasRef.current?.clientWidth ?? 1200;
+      const height = canvasRef.current?.clientHeight ?? 800;
+
+      // Chama a nova função de layout
+      const newPositions = calculateForceDirectedLayout(
+        entities,
+        width,
+        height
+      );
+
+      setPositions(newPositions);
+
+      // Marca que o layout inicial foi concluído para não rodar de novo
+      initialLayoutDone.current = true;
+    }
+  }, [entities]);
 
   const handleFormChange = (
     event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
