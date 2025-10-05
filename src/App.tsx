@@ -40,7 +40,9 @@ function App() {
   }, [isAuthenticated, activeWorld]);
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell ${screen === "canvas" ? "app-shell--canvas" : ""}`}
+    >
       {!isAuthenticated && screen === "register" ? (
         <RegisterPage
           onGoToLogin={() => setScreen("login")}

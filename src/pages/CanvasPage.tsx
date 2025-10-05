@@ -296,25 +296,29 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
   };
 
   return (
-    <div className="canvas">
-      <header className="canvas__header">
-        <div>
+    <div className="canvas canvas--fullscreen">
+      <aside className="canvas__sidebar">
+        <div className="canvas__sidebar-header">
+          <button
+            className="secondary canvas__sidebar-back"
+            type="button"
+            onClick={onBack}
+          >
+            Voltar
+          </button>
           <h1 className="title">{world.name}</h1>
           <p className="subtitle">{world.description || "Sem descrição"}</p>
         </div>
-        <div className="canvas__actions">
-          <button className="secondary" type="button" onClick={onBack}>
-            Voltar
-          </button>
+        <div className="canvas__sidebar-actions">
           <button type="button" onClick={() => setIsCreateModalOpen(true)}>
             Nova entidade
           </button>
         </div>
-      </header>
+        {error && <p className="error">{error}</p>}
+      </aside>
 
-      {error && <p className="error">{error}</p>}
-      <div className="canvas__board-wrapper">
-        <div className="canvas-board" ref={canvasRef}>
+      <main className="canvas__surface">
+        <div className="canvas__board" ref={canvasRef}>
           {isLoading && (
             <p className="canvas__status">Carregando entidades...</p>
           )}
@@ -357,7 +361,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
             );
           })}
         </div>
-      </div>
+      </main>
 
       {isCreateModalOpen && (
         <Modal title="Criar nova entidade" onClose={() => setIsCreateModalOpen(false)}>
