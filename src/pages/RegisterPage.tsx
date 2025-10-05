@@ -8,9 +8,9 @@ type RegisterPageProps = {
 
 export function RegisterPage({ onGoToLogin, onRegistered }: RegisterPageProps) {
   const { register } = useAuth();
-  const [username, setUsername] = useState("Danilo");
-  const [email, setEmail] = useState("danilo.nogueira1802@gmail.com");
-  const [password, setPassword] = useState("danilo123");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 

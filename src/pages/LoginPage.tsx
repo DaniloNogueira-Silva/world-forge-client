@@ -8,8 +8,8 @@ type LoginPageProps = {
 
 export function LoginPage({ onGoToRegister, onSuccess }: LoginPageProps) {
   const { login } = useAuth();
-  const [email, setEmail] = useState("danilo.nogueira1802@gmail.com");
-  const [password, setPassword] = useState("danilo123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
