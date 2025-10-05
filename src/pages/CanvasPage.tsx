@@ -36,13 +36,7 @@ type CanvasPosition = {
   y: number;
 };
 
-const ENTITY_TYPES = [
-  "CHARACTER",
-  "LOCATION",
-  "ITEM",
-  "ORGANIZATION",
-  "OTHER",
-];
+const ENTITY_TYPES = ["CHARACTER", "LOCATION", "ITEM", "ORGANIZATION", "OTHER"];
 
 const createId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -67,6 +61,60 @@ type EntityRelationForm = {
   targetEntityId: string;
 };
 
+function getEdgeCoordinates(
+  sourcePos: CanvasPosition,
+  targetPos: CanvasPosition
+) {
+  // 1. Encontra o centro de cada card
+  const sourceCenter = {
+    x: sourcePos.x + CARD_WIDTH / 2,
+    y: sourcePos.y + CARD_HEIGHT / 2,
+  };
+  const targetCenter = {
+    x: targetPos.x + CARD_WIDTH / 2,
+    y: targetPos.y + CARD_HEIGHT / 2,
+  };
+
+  // 2. Calcula o vetor da origem para o destino
+  const dx = targetCenter.x - sourceCenter.x;
+  const dy = targetCenter.y - sourceCenter.y;
+
+  // 3. Calcula os pontos de intersecção para ambos os cards
+  const points = { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } };
+
+  // Função interna para calcular o ponto para um único card
+  const calculateIntersection = (
+    center: { x: number; y: number },
+    deltaX: number,
+    deltaY: number
+  ) => {
+    // Evita divisão por zero
+    if (deltaX === 0 && deltaY === 0) return center;
+
+    const tan = deltaY / deltaX;
+    const width = CARD_WIDTH / 2;
+    const height = CARD_HEIGHT / 2;
+
+    // Determina qual borda será interceptada
+    if (Math.abs(deltaY) / height < Math.abs(deltaX) / width) {
+      // Intercepta a borda esquerda ou direita
+      const x = center.x + Math.sign(deltaX) * width;
+      const y = center.y + tan * (Math.sign(deltaX) * width);
+      return { x, y };
+    } else {
+      // Intercepta a borda superior ou inferior
+      const y = center.y + Math.sign(deltaY) * height;
+      const x = center.x + (1 / tan) * (Math.sign(deltaY) * height);
+      return { x, y };
+    }
+  };
+
+  points.start = calculateIntersection(sourceCenter, dx, dy);
+  points.end = calculateIntersection(targetCenter, -dx, -dy); // Vetor invertido para o alvo
+
+  return points;
+}
+
 export function CanvasPage({ world, onBack }: CanvasPageProps) {
   const { token } = useAuth();
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -83,7 +131,9 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
-  const [positions, setPositions] = useState<Record<string, CanvasPosition>>({});
+  const [positions, setPositions] = useState<Record<string, CanvasPosition>>(
+    {}
+  );
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const dragOffsetRef = useRef<CanvasPosition>({ x: 0, y: 0 });
@@ -142,7 +192,10 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
   };
 
   const handleAddAttribute = () => {
-    setAttributeFields((prev) => [...prev, { id: createId(), key: "", value: "" }]);
+    setAttributeFields((prev) => [
+      ...prev,
+      { id: createId(), key: "", value: "" },
+    ]);
   };
 
   const handleRemoveAttribute = (id: string) => {
@@ -439,9 +492,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
       return { width: 1200, height: 800 };
     }
 
-    const maxX = Math.max(
-      ...values.map((position) => position.x + CARD_WIDTH)
-    );
+    const maxX = Math.max(...values.map((position) => position.x + CARD_WIDTH));
     const maxY = Math.max(
       ...values.map((position) => position.y + CARD_HEIGHT)
     );
@@ -521,58 +572,58 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
           )}
           <svg
             className="entity-relations"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              pointerEvents: "none", // Impede que o SVG bloqueie cliques nos cards
+            }}
             width={boardDimensions.width}
             height={boardDimensions.height}
           >
-            <defs>
-              {ENTITY_RELATION_TYPES.map((type) => (
-                <marker
-                  key={type}
-                  id={`entity-relation-arrow-${type}`}
-                  markerWidth="12"
-                  markerHeight="12"
-                  refX="10"
-                  refY="6"
-                  orient="auto"
-                >
-                  <path
-                    d="M2,2 L10,6 L2,10 Z"
-                    fill={RELATION_COLORS[type] ?? "#38bdf8"}
-                  />
-                </marker>
-              ))}
-            </defs>
+            {/* A SEÇÃO <defs> FOI REMOVIDA DAQUI */}
+
             {relationEdges.map((edge) => {
               const source = positions[edge.sourceId];
               const target = positions[edge.targetId];
               if (!source || !target) return null;
 
-              const startX = source.x + CARD_WIDTH / 2;
-              const startY = source.y + CARD_HEIGHT / 2;
-              const endX = target.x + CARD_WIDTH / 2;
-              const endY = target.y + CARD_HEIGHT / 2;
+              // 👇 A MUDANÇA PRINCIPAL ACONTECE AQUI
+              // Substituímos o cálculo antigo pela nossa nova função
+              const { start, end } = getEdgeCoordinates(source, target);
 
-              const labelX = (startX + endX) / 2;
-              const labelY = (startY + endY) / 2;
-
+              // Coordenadas para o texto da relação (ainda no meio da linha)
+              const labelX = (start.x + end.x) / 2;
+              const labelY = (start.y + end.y) / 2;
               const color = RELATION_COLORS[edge.type] ?? "#38bdf8";
 
               return (
                 <g key={edge.id} className="entity-relations__edge">
                   <line
                     className="entity-relations__line"
-                    x1={startX}
-                    y1={startY}
-                    x2={endX}
-                    y2={endY}
+                    x1={start.x}
+                    y1={start.y}
+                    x2={end.x}
+                    y2={end.y}
                     stroke={color}
-                    markerEnd={`url(#entity-relation-arrow-${edge.type})`}
+                    // O ATRIBUTO "markerEnd" FOI REMOVIDO DAQUI
                   />
                   <text
                     className="entity-relations__label"
                     x={labelX}
                     y={labelY}
                     fill={color}
+                    style={{
+                      dominantBaseline: "middle",
+                      textAnchor: "middle",
+                      fontSize: "12px",
+                      fontWeight: "bold",
+                      // Adiciona um contorno sutil para melhorar a legibilidade
+                      paintOrder: "stroke",
+                      stroke: "#1f2937", // Cor de fundo do canvas
+                      strokeWidth: "3px",
+                      strokeLinejoin: "round",
+                    }}
                   >
                     {edge.type}
                   </text>
@@ -619,7 +670,10 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
       </main>
 
       {isCreateModalOpen && (
-        <Modal title="Criar nova entidade" onClose={() => setIsCreateModalOpen(false)}>
+        <Modal
+          title="Criar nova entidade"
+          onClose={() => setIsCreateModalOpen(false)}
+        >
           <form className="form" onSubmit={handleCreateEntity}>
             <label className="field">
               <span>Nome</span>
@@ -661,7 +715,11 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
                     placeholder="Valor (ex.: white)"
                     value={field.value}
                     onChange={(event) =>
-                      handleAttributeChange(field.id, "value", event.target.value)
+                      handleAttributeChange(
+                        field.id,
+                        "value",
+                        event.target.value
+                      )
                     }
                   />
                   <button
@@ -698,11 +756,13 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
           <div className="entity-details">
             <span className="entity-type">{selectedEntity.entity_type}</span>
             <span className="entity-details__date">
-              Criado em {" "}
+              Criado em{" "}
               {new Date(selectedEntity.created_at).toLocaleDateString()}
             </span>
             {Object.keys(selectedEntity.attributes ?? {}).length === 0 ? (
-              <p className="entity-details__empty">Sem atributos cadastrados.</p>
+              <p className="entity-details__empty">
+                Sem atributos cadastrados.
+              </p>
             ) : (
               <dl className="entity-details__list">
                 {Object.entries(selectedEntity.attributes ?? {}).map(
@@ -730,7 +790,10 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
                       </span>
                       <div className="entity-relations__targets">
                         {relation.targets.map((targetId) => (
-                          <span key={targetId} className="entity-relations__target">
+                          <span
+                            key={targetId}
+                            className="entity-relations__target"
+                          >
                             {entityNameMap.get(targetId) ?? targetId}
                           </span>
                         ))}
@@ -787,7 +850,9 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
                     type="submit"
                     disabled={isAddingRelation || !relationForm.targetEntityId}
                   >
-                    {isAddingRelation ? "Criando relação..." : "Adicionar relação"}
+                    {isAddingRelation
+                      ? "Criando relação..."
+                      : "Adicionar relação"}
                   </button>
                 </form>
               )}
