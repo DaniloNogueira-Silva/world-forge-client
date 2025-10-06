@@ -1,17 +1,28 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useRouter } from "../router/RouterProvider";
 
-type LoginPageProps = {
-  onGoToRegister: () => void;
-  onSuccess: () => void;
+type LoginState = {
+  from?: string;
 };
 
-export function LoginPage({ onGoToRegister, onSuccess }: LoginPageProps) {
+export function LoginPage() {
   const { login } = useAuth();
+  const { navigate, state } = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const redirectPath = useMemo(() => {
+    if (state && typeof state === "object") {
+      const potentialState = state as LoginState;
+      if (potentialState.from) {
+        return potentialState.from;
+      }
+    }
+    return "/worlds";
+  }, [state]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -19,7 +30,7 @@ export function LoginPage({ onGoToRegister, onSuccess }: LoginPageProps) {
     setIsSubmitting(true);
     try {
       await login(email, password);
-      onSuccess();
+      navigate(redirectPath, { replace: true });
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -59,7 +70,11 @@ export function LoginPage({ onGoToRegister, onSuccess }: LoginPageProps) {
           {isSubmitting ? "Entrando..." : "Entrar"}
         </button>
       </form>
-      <button className="link-button" type="button" onClick={onGoToRegister}>
+      <button
+        className="link-button"
+        type="button"
+        onClick={() => navigate("/register")}
+      >
         Criar uma conta
       </button>
     </div>

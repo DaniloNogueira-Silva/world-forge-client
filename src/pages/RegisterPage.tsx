@@ -1,26 +1,25 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useRouter } from "../router/RouterProvider";
 
-type RegisterPageProps = {
-  onGoToLogin: () => void;
-  onRegistered: () => void;
-};
-
-export function RegisterPage({ onGoToLogin, onRegistered }: RegisterPageProps) {
+export function RegisterPage() {
   const { register } = useAuth();
+  const { navigate } = useRouter();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
+    setSuccessMessage(null);
     setIsSubmitting(true);
     try {
       await register(username, email, password);
-      onRegistered();
+      setSuccessMessage("Conta criada com sucesso! Faça login para continuar.");
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -65,11 +64,16 @@ export function RegisterPage({ onGoToLogin, onRegistered }: RegisterPageProps) {
           />
         </label>
         {error && <p className="error">{error}</p>}
+        {successMessage && <p className="success">{successMessage}</p>}
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? "Criando conta..." : "Registrar"}
         </button>
       </form>
-      <button className="link-button" type="button" onClick={onGoToLogin}>
+      <button
+        className="link-button"
+        type="button"
+        onClick={() => navigate("/login")}
+      >
         Já tenho uma conta
       </button>
     </div>

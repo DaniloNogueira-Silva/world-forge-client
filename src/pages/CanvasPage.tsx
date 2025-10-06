@@ -3,15 +3,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
 } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
   createEntity,
   createEntityRelation,
   fetchEntities,
+  fetchWorld,
   ENTITY_RELATION_TYPES,
   updateEntity,
   updateEntityAttributes,
@@ -21,6 +22,10 @@ import {
   type EntityRelationType,
   type World,
 } from "../api/worlds";
+import { useRouteParams } from "../router/RouteParamsContext";
+import { useRouter } from "../router/RouterProvider";
+import { Modal } from "../components/Modal";
+import { IconButton } from "../components/IconButton";
 import {
   forceCenter,
   forceLink,
@@ -28,11 +33,6 @@ import {
   forceSimulation,
   type SimulationNodeDatum,
 } from "d3-force";
-
-type CanvasPageProps = {
-  world: World;
-  onBack: () => void;
-};
 
 type AttributeField = {
   id: string;
@@ -46,6 +46,73 @@ type CanvasPosition = {
 };
 
 const ENTITY_TYPES = ["CHARACTER", "LOCATION", "ITEM", "ORGANIZATION", "OTHER"];
+
+const ENTITY_TYPE_COLORS: Record<string, string> = {
+  CHARACTER: "#38bdf8",
+  LOCATION: "#4ade80",
+  ITEM: "#fbbf24",
+  ORGANIZATION: "#a855f7",
+  OTHER: "#f97316",
+};
+
+const iconProps = {
+  width: 18,
+  height: 18,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+};
+
+function PlusIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M9 10v7" />
+      <path d="M15 10v7" />
+      <path d="M5 6l1 14h12l1-14" />
+    </svg>
+  );
+}
+
+function ArrowLeftIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M5 12h14" />
+      <path d="M10 7l-5 5 5 5" />
+    </svg>
+  );
+}
+
+type CSSVarProperties = CSSProperties & Record<`--${string}`, string | number>;
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace("#", "");
+  const value =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : normalized;
+
+  const r = Number.parseInt(value.slice(0, 2), 16);
+  const g = Number.parseInt(value.slice(2, 4), 16);
+  const b = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 const createId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -190,8 +257,17 @@ function calculateForceDirectedLayout(
   return finalPositions;
 }
 
-export function CanvasPage({ world, onBack }: CanvasPageProps) {
+export function CanvasPage() {
   const { token } = useAuth();
+  const { navigate, state } = useRouter();
+  const params = useRouteParams();
+  const worldId = params.worldId;
+  const locationState =
+    state && typeof state === "object" ? (state as { world?: World }) : null;
+  const initialWorld = locationState?.world ?? null;
+  const [world, setWorld] = useState<World | null>(initialWorld);
+  const [isWorldLoading, setIsWorldLoading] = useState(!initialWorld);
+  const [worldError, setWorldError] = useState<string | null>(null);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -238,10 +314,50 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
   const [relationError, setRelationError] = useState<string | null>(null);
 
   const initialLayoutDone = useRef(false);
+  const handleBack = () => navigate("/worlds");
 
   useEffect(() => {
+    if (!token || !worldId) {
+      if (!worldId) {
+        setWorldError("Mundo não encontrado.");
+        setIsWorldLoading(false);
+      }
+      return;
+    }
+
+    let isCancelled = false;
+    const loadWorld = async () => {
+      setIsWorldLoading(true);
+      setWorldError(null);
+      try {
+        const response = await fetchWorld(token, worldId);
+        if (!isCancelled) {
+          setWorld(response);
+        }
+      } catch (err) {
+        if (isCancelled) return;
+        if (err instanceof Error) {
+          setWorldError(err.message);
+        } else {
+          setWorldError("Não foi possível carregar este mundo.");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsWorldLoading(false);
+        }
+      }
+    };
+
+    loadWorld();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [token, worldId]);
+
+  useEffect(() => {
+    if (!token || !world) return;
     const loadEntities = async () => {
-      if (!token) return;
       setIsLoading(true);
       setError(null);
       try {
@@ -264,7 +380,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
     };
 
     loadEntities();
-  }, [token, world.id]);
+  }, [token, world]);
 
   useEffect(() => {
     // Roda apenas se tivermos entidades e o layout inicial ainda não foi calculado
@@ -313,7 +429,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
 
   const handleCreateEntity = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!token) return;
+    if (!token || !world) return;
     setIsCreating(true);
     setError(null);
     try {
@@ -363,7 +479,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
-    if (!token || !selectedEntity) return;
+    if (!token || !selectedEntity || !world) return;
 
     setIsUpdatingEntity(true);
     setEntityUpdateError(null);
@@ -422,7 +538,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
-    if (!token || !selectedEntity) return;
+    if (!token || !selectedEntity || !world) return;
 
     setIsUpdatingAttributes(true);
     setAttributesUpdateError(null);
@@ -655,7 +771,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
 
   const handleAddRelation = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!token || !selectedEntity) return;
+    if (!token || !selectedEntity || !world) return;
     if (!relationForm.targetEntityId) {
       setRelationError("Selecione uma entidade alvo.");
       return;
@@ -779,6 +895,34 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
         }))
     : [];
 
+  if (!world && isWorldLoading) {
+    return (
+      <div className="canvas canvas--fullscreen canvas--feedback">
+        <div className="canvas__feedback-card">
+          <p className="canvas__status">Carregando mundo...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!world) {
+    return (
+      <div className="canvas canvas--fullscreen canvas--feedback">
+        <div className="canvas__feedback-card">
+          <h1>Não encontramos esse mundo.</h1>
+          <p>
+            {worldError
+              ? worldError
+              : "Tente voltar à listagem e selecionar novamente."}
+          </p>
+          <button type="button" onClick={handleBack}>
+            Voltar para mundos
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="canvas canvas--fullscreen">
       <aside className="canvas__sidebar">
@@ -786,18 +930,27 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
           <button
             className="secondary canvas__sidebar-back"
             type="button"
-            onClick={onBack}
+            onClick={handleBack}
           >
-            Voltar
+            <ArrowLeftIcon />
+            <span>Voltar</span>
           </button>
           <h1 className="title">{world.name}</h1>
           <p className="subtitle">{world.description || "Sem descrição"}</p>
         </div>
         <div className="canvas__sidebar-actions">
-          <button type="button" onClick={() => setIsCreateModalOpen(true)}>
+          <button
+            type="button"
+            className="button-with-icon"
+            onClick={() => setIsCreateModalOpen(true)}
+          >
+            <PlusIcon />
             Nova entidade
           </button>
         </div>
+        {worldError && (
+          <p className="error canvas__sidebar-error">{worldError}</p>
+        )}
         {error && <p className="error">{error}</p>}
       </aside>
 
@@ -881,23 +1034,36 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
             const position = positions[entity.id] ?? { x: 120, y: 120 };
             const entries = Object.entries(entity.attributes ?? {});
             const preview = entries.slice(0, 2);
+            const entityColor =
+              ENTITY_TYPE_COLORS[entity.entity_type] ?? ENTITY_TYPE_COLORS.OTHER;
+            const cardStyle: CSSVarProperties = {
+              left: position.x,
+              top: position.y,
+              "--entity-color": entityColor,
+              "--entity-color-soft": hexToRgba(entityColor, 0.22),
+              "--entity-color-strong": hexToRgba(entityColor, 0.45),
+            };
             return (
               <article
                 key={entity.id}
                 className="entity-node"
-                style={{ left: position.x, top: position.y }}
+                style={cardStyle}
                 onPointerDown={(event) => handlePointerDown(event, entity.id)}
                 onClick={(event) => handleEntityClick(event, entity)}
               >
                 <header className="entity-node__header">
-                  <h3>{entity.name}</h3>
+                  <h3 title={entity.name}>{entity.name}</h3>
                   <span className="entity-type">{entity.entity_type}</span>
                 </header>
                 <ul className="entity-node__attributes">
                   {preview.map(([key, value]) => (
                     <li key={key}>
-                      <span className="entity-node__label">{key}</span>
-                      <span className="entity-node__value">{value}</span>
+                      <span className="entity-node__label" title={key}>
+                        {key}
+                      </span>
+                      <span className="entity-node__value" title={value}>
+                        {value}
+                      </span>
                     </li>
                   ))}
                   {entries.length === 0 && (
@@ -972,21 +1138,21 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
                       )
                     }
                   />
-                  <button
-                    type="button"
-                    className="danger"
+                  <IconButton
+                    label="Remover atributo"
+                    variant="danger"
                     onClick={() => handleRemoveCreateAttribute(field.id)}
                     disabled={createAttributeFields.length === 1}
-                  >
-                    Remover
-                  </button>
+                    icon={<TrashIcon />}
+                  />
                 </div>
               ))}
               <button
                 type="button"
-                className="secondary"
+                className="secondary button-with-icon"
                 onClick={handleAddCreateAttribute}
               >
+                <PlusIcon />
                 Adicionar atributo
               </button>
             </div>
@@ -1059,9 +1225,10 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
                 <h3>Atributos</h3>
                 <button
                   type="button"
-                  className="secondary"
+                  className="secondary button-with-icon"
                   onClick={handleAddEditAttribute}
                 >
+                  <PlusIcon />
                   Adicionar atributo
                 </button>
               </div>
@@ -1137,13 +1304,12 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
                             )}
                           </label>
                         </div>
-                        <button
-                          type="button"
-                          className="danger"
+                        <IconButton
+                          label="Remover atributo"
+                          variant="danger"
                           onClick={() => handleRemoveEditAttribute(field.id)}
-                        >
-                          Remover
-                        </button>
+                          icon={<TrashIcon />}
+                        />
                       </div>
                     );
                   })
@@ -1248,34 +1414,6 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
           </div>
         </Modal>
       )}
-    </div>
-  );
-}
-
-type ModalProps = {
-  title: string;
-  onClose: () => void;
-  children: ReactNode;
-};
-
-function Modal({ title, onClose, children }: ModalProps) {
-  return (
-    <div className="modal" role="dialog" aria-modal="true">
-      <div className="modal__backdrop" onClick={onClose} />
-      <div className="modal__content">
-        <header className="modal__header">
-          <h2>{title}</h2>
-          <button
-            type="button"
-            className="modal__close"
-            onClick={onClose}
-            aria-label="Fechar modal"
-          >
-            ×
-          </button>
-        </header>
-        <div className="modal__body">{children}</div>
-      </div>
     </div>
   );
 }

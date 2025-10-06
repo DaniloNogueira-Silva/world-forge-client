@@ -6,13 +6,11 @@ import {
   type World,
   type WorldPayload,
 } from "../api/worlds";
+import { useRouter } from "../router/RouterProvider";
 
-type WorldsPageProps = {
-  onOpenWorld: (world: World) => void;
-};
-
-export function WorldsPage({ onOpenWorld }: WorldsPageProps) {
+export function WorldsPage() {
   const { token, logout } = useAuth();
+  const { navigate } = useRouter();
   const [worlds, setWorlds] = useState<World[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +41,9 @@ export function WorldsPage({ onOpenWorld }: WorldsPageProps) {
     loadWorlds();
   }, [token]);
 
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (
+    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
@@ -68,19 +68,30 @@ export function WorldsPage({ onOpenWorld }: WorldsPageProps) {
     }
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate("/", { replace: true });
+  };
+
+  const handleOpenWorld = (world: World) => {
+    navigate(`/worlds/${world.id}`, { state: { world } });
+  };
+
   return (
     <div className="dashboard">
-      <header className="dashboard__header">
+      <header className="dashboard__header dashboard__header--worlds">
         <div>
           <h1 className="title">Seus Mundos</h1>
-          <p className="subtitle">Gerencie e crie universos para explorar.</p>
+          <p className="subtitle">
+            Gerencie e crie universos para explorar narrativas únicas.
+          </p>
         </div>
-        <button className="secondary" type="button" onClick={logout}>
+        <button className="secondary" type="button" onClick={handleLogout}>
           Sair
         </button>
       </header>
 
-      <section className="card">
+      <section className="card card--highlight">
         <h2 className="section-title">Criar novo mundo</h2>
         <form className="form form--inline" onSubmit={handleCreate}>
           <label className="field">
@@ -114,10 +125,12 @@ export function WorldsPage({ onOpenWorld }: WorldsPageProps) {
       <section className="worlds-grid">
         {isLoading && <p className="loading">Carregando mundos...</p>}
         {!isLoading && !hasWorlds && (
-          <p className="empty">Nenhum mundo criado ainda. Comece criando um acima!</p>
+          <p className="empty">
+            Nenhum mundo criado ainda. Comece cadastrando um universo incrível!
+          </p>
         )}
         {worlds.map((world) => (
-          <article key={world.id} className="world-card">
+          <article key={world.id} className="world-card world-card--accent">
             <header>
               <h3>{world.name}</h3>
               <span className="world-date">
@@ -125,7 +138,7 @@ export function WorldsPage({ onOpenWorld }: WorldsPageProps) {
               </span>
             </header>
             <p>{world.description || "Sem descrição"}</p>
-            <button type="button" onClick={() => onOpenWorld(world)}>
+            <button type="button" onClick={() => handleOpenWorld(world)}>
               Entrar no mundo
             </button>
           </article>
