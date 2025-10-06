@@ -73,6 +73,17 @@ export async function fetchWorlds(token: string): Promise<World[]> {
   return data;
 }
 
+export async function fetchWorld(
+  token: string,
+  worldId: string
+): Promise<World> {
+  const { data } = await axios.get<World>(
+    `${BASE_URL}/worlds/${worldId}`,
+    authHeader(token)
+  );
+  return data;
+}
+
 export async function createWorld(
   token: string,
   payload: WorldPayload
