@@ -7,15 +7,18 @@ import {
   type WorldPayload,
 } from "../api/worlds";
 import { useRouter } from "../router/RouterProvider";
+import { Modal } from "../components/Modal";
 
 export function WorldsPage() {
   const { token, logout } = useAuth();
   const { navigate } = useRouter();
   const [worlds, setWorlds] = useState<World[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [form, setForm] = useState<WorldPayload>({ name: "", description: "" });
   const [isCreating, setIsCreating] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const hasWorlds = useMemo(() => worlds.length > 0, [worlds]);
 
@@ -23,15 +26,15 @@ export function WorldsPage() {
     const loadWorlds = async () => {
       if (!token) return;
       setIsLoading(true);
-      setError(null);
+      setListError(null);
       try {
         const response = await fetchWorlds(token);
         setWorlds(response);
       } catch (err) {
         if (err instanceof Error) {
-          setError(err.message);
+          setListError(err.message);
         } else {
-          setError("Não foi possível carregar os mundos.");
+          setListError("Não foi possível carregar os mundos.");
         }
       } finally {
         setIsLoading(false);
@@ -48,20 +51,36 @@ export function WorldsPage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleOpenCreateModal = () => {
+    setForm({ name: "", description: "" });
+    setCreateError(null);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCloseCreateModal = () => {
+    setIsCreateModalOpen(false);
+  };
+
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!token) return;
     setIsCreating(true);
-    setError(null);
+    setCreateError(null);
     try {
-      const newWorld = await createWorld(token, form);
+      const payload: WorldPayload = {
+        name: form.name.trim(),
+        description: form.description.trim(),
+      };
+      const newWorld = await createWorld(token, payload);
       setWorlds((prev) => [newWorld, ...prev]);
+      setIsCreateModalOpen(false);
       setForm({ name: "", description: "" });
+      navigate(`/worlds/${newWorld.id}`, { state: { world: newWorld } });
     } catch (err) {
       if (err instanceof Error) {
-        setError(err.message);
+        setCreateError(err.message);
       } else {
-        setError("Não foi possível criar o mundo.");
+        setCreateError("Não foi possível criar o mundo.");
       }
     } finally {
       setIsCreating(false);
@@ -98,57 +117,17 @@ export function WorldsPage() {
         </button>
       </header>
 
-      <section className="worlds__create">
-        <div className="worlds__create-header">
-          <div>
-            <h2>Crie um novo mundo</h2>
-            <p>Defina o nome e uma breve descrição para começar a explorar.</p>
-          </div>
-          <button
-            className="secondary worlds__clear"
-            type="button"
-            onClick={() => setForm({ name: "", description: "" })}
-            disabled={!form.name && !form.description}
-          >
-            Limpar formulário
-          </button>
-        </div>
-        <form className="worlds__form" onSubmit={handleCreate}>
-          <label className="field">
-            <span>Nome</span>
-            <input
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              required
-              placeholder="Ex.: Cataclisma"
-            />
-          </label>
-          <label className="field">
-            <span>Descrição</span>
-            <textarea
-              name="description"
-              value={form.description}
-              onChange={handleChange}
-              placeholder="Conte um pouco sobre este mundo"
-              rows={3}
-            />
-          </label>
-          <div className="worlds__form-actions">
-            <button type="submit" disabled={isCreating}>
-              {isCreating ? "Criando..." : "Criar mundo"}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      {error && <p className="error">{error}</p>}
-
       <section className="worlds__list">
         <header className="worlds__list-header">
-          <h2>Mundos recentes</h2>
-          <p>Acompanhe cada universo e retome histórias em segundos.</p>
+          <div>
+            <h2>Mundos recentes</h2>
+            <p>Acompanhe cada universo e retome histórias em segundos.</p>
+          </div>
+          <button type="button" onClick={handleOpenCreateModal}>
+            Novo mundo
+          </button>
         </header>
+        {listError && <p className="error">{listError}</p>}
         {isLoading && <p className="loading">Carregando mundos...</p>}
         {!isLoading && !hasWorlds && (
           <p className="empty worlds__empty">
@@ -172,6 +151,39 @@ export function WorldsPage() {
           ))}
         </div>
       </section>
+
+      {isCreateModalOpen && (
+        <Modal title="Criar novo mundo" onClose={handleCloseCreateModal}>
+          <form className="worlds__form" onSubmit={handleCreate}>
+            <label className="field">
+              <span>Nome</span>
+              <input
+                name="name"
+                value={form.name}
+                onChange={handleChange}
+                required
+                placeholder="Ex.: Cataclisma"
+              />
+            </label>
+            <label className="field">
+              <span>Descrição</span>
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={handleChange}
+                placeholder="Conte um pouco sobre este mundo"
+                rows={4}
+              />
+            </label>
+            {createError && <p className="error">{createError}</p>}
+            <div className="worlds__form-actions">
+              <button type="submit" disabled={isCreating}>
+                {isCreating ? "Criando..." : "Criar mundo"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }
