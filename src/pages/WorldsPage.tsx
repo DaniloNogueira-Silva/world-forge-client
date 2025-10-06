@@ -78,22 +78,42 @@ export function WorldsPage() {
   };
 
   return (
-    <div className="dashboard">
-      <header className="dashboard__header dashboard__header--worlds">
-        <div>
-          <h1 className="title">Seus Mundos</h1>
-          <p className="subtitle">
-            Gerencie e crie universos para explorar narrativas únicas.
+    <div className="worlds">
+      <header className="worlds__hero">
+        <div className="worlds__hero-copy">
+          <span className="worlds__eyebrow">Seus universos</span>
+          <h1>Organize e desenvolva mundos inesquecíveis</h1>
+          <p>
+            Visualize personagens, cronologias e facções em um só lugar.
+            Construa narrativas conectadas com uma experiência minimalista e
+            elegante.
           </p>
         </div>
-        <button className="secondary" type="button" onClick={handleLogout}>
+        <button
+          className="secondary worlds__logout"
+          type="button"
+          onClick={handleLogout}
+        >
           Sair
         </button>
       </header>
 
-      <section className="card card--highlight">
-        <h2 className="section-title">Criar novo mundo</h2>
-        <form className="form form--inline" onSubmit={handleCreate}>
+      <section className="worlds__create">
+        <div className="worlds__create-header">
+          <div>
+            <h2>Crie um novo mundo</h2>
+            <p>Defina o nome e uma breve descrição para começar a explorar.</p>
+          </div>
+          <button
+            className="secondary worlds__clear"
+            type="button"
+            onClick={() => setForm({ name: "", description: "" })}
+            disabled={!form.name && !form.description}
+          >
+            Limpar formulário
+          </button>
+        </div>
+        <form className="worlds__form" onSubmit={handleCreate}>
           <label className="field">
             <span>Nome</span>
             <input
@@ -114,35 +134,43 @@ export function WorldsPage() {
               rows={3}
             />
           </label>
-          <button type="submit" disabled={isCreating}>
-            {isCreating ? "Criando..." : "Criar mundo"}
-          </button>
+          <div className="worlds__form-actions">
+            <button type="submit" disabled={isCreating}>
+              {isCreating ? "Criando..." : "Criar mundo"}
+            </button>
+          </div>
         </form>
       </section>
 
       {error && <p className="error">{error}</p>}
 
-      <section className="worlds-grid">
+      <section className="worlds__list">
+        <header className="worlds__list-header">
+          <h2>Mundos recentes</h2>
+          <p>Acompanhe cada universo e retome histórias em segundos.</p>
+        </header>
         {isLoading && <p className="loading">Carregando mundos...</p>}
         {!isLoading && !hasWorlds && (
-          <p className="empty">
+          <p className="empty worlds__empty">
             Nenhum mundo criado ainda. Comece cadastrando um universo incrível!
           </p>
         )}
-        {worlds.map((world) => (
-          <article key={world.id} className="world-card world-card--accent">
-            <header>
-              <h3>{world.name}</h3>
-              <span className="world-date">
-                Criado em {new Date(world.created_at).toLocaleDateString()}
-              </span>
-            </header>
-            <p>{world.description || "Sem descrição"}</p>
-            <button type="button" onClick={() => handleOpenWorld(world)}>
-              Entrar no mundo
-            </button>
-          </article>
-        ))}
+        <div className="worlds__grid">
+          {worlds.map((world) => (
+            <article key={world.id} className="world-card world-card--accent">
+              <header>
+                <h3>{world.name}</h3>
+                <span className="world-date">
+                  Criado em {new Date(world.created_at).toLocaleDateString()}
+                </span>
+              </header>
+              <p>{world.description || "Sem descrição"}</p>
+              <button type="button" onClick={() => handleOpenWorld(world)}>
+                Abrir mundo
+              </button>
+            </article>
+          ))}
+        </div>
       </section>
     </div>
   );
