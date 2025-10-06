@@ -13,6 +13,8 @@ import {
   createEntityRelation,
   fetchEntities,
   ENTITY_RELATION_TYPES,
+  updateEntity,
+  updateEntityAttributes,
   type Entity,
   type EntityPayload,
   type EntityRelationPayload,
@@ -52,6 +54,21 @@ const createId = () =>
 
 const CARD_WIDTH = 260;
 const CARD_HEIGHT = 180;
+
+const LONG_ATTRIBUTE_THRESHOLD = 80;
+
+const createAttributeField = (key = "", value = ""): AttributeField => ({
+  id: createId(),
+  key,
+  value,
+});
+
+const mapAttributesToFields = (
+  attributes: Record<string, string> | undefined
+): AttributeField[] =>
+  Object.entries(attributes ?? {}).map(([key, value]) =>
+    createAttributeField(key, value)
+  );
 
 const RELATION_COLORS: Record<EntityRelationType, string> = {
   ORIGIN: "#38bdf8",
@@ -183,12 +200,27 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
     entity_type: ENTITY_TYPES[0],
     attributes: {},
   });
-  const [attributeFields, setAttributeFields] = useState<AttributeField[]>([
-    { id: createId(), key: "", value: "" },
-  ]);
+  const [createAttributeFields, setCreateAttributeFields] = useState<
+    AttributeField[]
+  >([createAttributeField()]);
   const [isCreating, setIsCreating] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
+  const [entityEditForm, setEntityEditForm] = useState({
+    name: "",
+    entity_type: ENTITY_TYPES[0],
+  });
+  const [editAttributeFields, setEditAttributeFields] = useState<
+    AttributeField[]
+  >([]);
+  const [isUpdatingEntity, setIsUpdatingEntity] = useState(false);
+  const [entityUpdateError, setEntityUpdateError] = useState<string | null>(
+    null
+  );
+  const [isUpdatingAttributes, setIsUpdatingAttributes] = useState(false);
+  const [attributesUpdateError, setAttributesUpdateError] = useState<
+    string | null
+  >(null);
   const [positions, setPositions] = useState<Record<string, CanvasPosition>>(
     {}
   );
@@ -261,25 +293,22 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleAttributeChange = (
+  const handleCreateAttributeChange = (
     id: string,
     field: "key" | "value",
     value: string
   ) => {
-    setAttributeFields((prev) =>
+    setCreateAttributeFields((prev) =>
       prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
     );
   };
 
-  const handleAddAttribute = () => {
-    setAttributeFields((prev) => [
-      ...prev,
-      { id: createId(), key: "", value: "" },
-    ]);
+  const handleAddCreateAttribute = () => {
+    setCreateAttributeFields((prev) => [...prev, createAttributeField()]);
   };
 
-  const handleRemoveAttribute = (id: string) => {
-    setAttributeFields((prev) => prev.filter((item) => item.id !== id));
+  const handleRemoveCreateAttribute = (id: string) => {
+    setCreateAttributeFields((prev) => prev.filter((item) => item.id !== id));
   };
 
   const handleCreateEntity = async (event: React.FormEvent) => {
@@ -288,7 +317,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
     setIsCreating(true);
     setError(null);
     try {
-      const attributes = attributeFields.reduce<Record<string, string>>(
+      const attributes = createAttributeFields.reduce<Record<string, string>>(
         (acc, { key, value }) => {
           if (key.trim()) {
             acc[key.trim()] = value.trim();
@@ -310,7 +339,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
       };
       setEntities((prev) => [normalizedEntity, ...prev]);
       setForm({ name: "", entity_type: ENTITY_TYPES[0], attributes: {} });
-      setAttributeFields([{ id: createId(), key: "", value: "" }]);
+      setCreateAttributeFields([createAttributeField()]);
       setIsCreateModalOpen(false);
     } catch (err) {
       if (err instanceof Error) {
@@ -320,6 +349,125 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
       }
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleEntityEditFormChange = (
+    event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = event.target;
+    setEntityEditForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleEntityUpdate = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+    if (!token || !selectedEntity) return;
+
+    setIsUpdatingEntity(true);
+    setEntityUpdateError(null);
+
+    try {
+      const payload = {
+        name: entityEditForm.name.trim(),
+        entity_type: entityEditForm.entity_type,
+      };
+      const updatedEntity = await updateEntity(
+        token,
+        world.id,
+        selectedEntity.id,
+        payload
+      );
+      const normalizedEntity: Entity = {
+        ...updatedEntity,
+        relations: updatedEntity.relations ?? {},
+      };
+      setEntities((prev) =>
+        prev.map((entity) =>
+          entity.id === normalizedEntity.id ? normalizedEntity : entity
+        )
+      );
+      setSelectedEntity(normalizedEntity);
+    } catch (err) {
+      if (err instanceof Error) {
+        setEntityUpdateError(err.message);
+      } else {
+        setEntityUpdateError("Não foi possível atualizar a entidade.");
+      }
+    } finally {
+      setIsUpdatingEntity(false);
+    }
+  };
+
+  const handleEditAttributeChange = (
+    id: string,
+    field: "key" | "value",
+    value: string
+  ) => {
+    setEditAttributeFields((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const handleAddEditAttribute = () => {
+    setEditAttributeFields((prev) => [...prev, createAttributeField()]);
+  };
+
+  const handleRemoveEditAttribute = (id: string) => {
+    setEditAttributeFields((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleAttributesUpdate = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+    if (!token || !selectedEntity) return;
+
+    setIsUpdatingAttributes(true);
+    setAttributesUpdateError(null);
+
+    try {
+      const attributes = editAttributeFields.reduce<Record<string, string>>(
+        (acc, { key, value }) => {
+          const trimmedKey = key.trim();
+          if (trimmedKey) {
+            acc[trimmedKey] = value;
+          }
+          return acc;
+        },
+        {}
+      );
+
+      const updatedEntity = await updateEntityAttributes(
+        token,
+        world.id,
+        selectedEntity.id,
+        { attributes }
+      );
+      const normalizedEntity: Entity = {
+        ...updatedEntity,
+        relations: updatedEntity.relations ?? {},
+      };
+      setEntities((prev) =>
+        prev.map((entity) =>
+          entity.id === normalizedEntity.id ? normalizedEntity : entity
+        )
+      );
+      setSelectedEntity(normalizedEntity);
+      setEditAttributeFields(
+        mapAttributesToFields(normalizedEntity.attributes)
+      );
+    } catch (err) {
+      if (err instanceof Error) {
+        setAttributesUpdateError(err.message);
+      } else {
+        setAttributesUpdateError(
+          "Não foi possível atualizar os atributos."
+        );
+      }
+    } finally {
+      setIsUpdatingAttributes(false);
     }
   };
 
@@ -439,6 +587,24 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
     if (!selectedEntity) return;
     setRelationForm({ type: ENTITY_RELATION_TYPES[0], targetEntityId: "" });
     setRelationError(null);
+  }, [selectedEntity]);
+
+  useEffect(() => {
+    if (!selectedEntity) {
+      setEntityEditForm({ name: "", entity_type: ENTITY_TYPES[0] });
+      setEditAttributeFields([]);
+      setEntityUpdateError(null);
+      setAttributesUpdateError(null);
+      return;
+    }
+
+    setEntityEditForm({
+      name: selectedEntity.name,
+      entity_type: selectedEntity.entity_type,
+    });
+    setEditAttributeFields(mapAttributesToFields(selectedEntity.attributes));
+    setEntityUpdateError(null);
+    setAttributesUpdateError(null);
   }, [selectedEntity]);
 
   const handlePointerDown = (
@@ -782,20 +948,24 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
 
             <div className="attributes">
               <span className="attributes__title">Atributos</span>
-              {attributeFields.map((field) => (
+              {createAttributeFields.map((field) => (
                 <div key={field.id} className="attributes__row">
                   <input
                     placeholder="Chave (ex.: hair)"
                     value={field.key}
                     onChange={(event) =>
-                      handleAttributeChange(field.id, "key", event.target.value)
+                      handleCreateAttributeChange(
+                        field.id,
+                        "key",
+                        event.target.value
+                      )
                     }
                   />
                   <input
                     placeholder="Valor (ex.: white)"
                     value={field.value}
                     onChange={(event) =>
-                      handleAttributeChange(
+                      handleCreateAttributeChange(
                         field.id,
                         "value",
                         event.target.value
@@ -805,8 +975,8 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
                   <button
                     type="button"
                     className="danger"
-                    onClick={() => handleRemoveAttribute(field.id)}
-                    disabled={attributeFields.length === 1}
+                    onClick={() => handleRemoveCreateAttribute(field.id)}
+                    disabled={createAttributeFields.length === 1}
                   >
                     Remover
                   </button>
@@ -815,7 +985,7 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
               <button
                 type="button"
                 className="secondary"
-                onClick={handleAddAttribute}
+                onClick={handleAddCreateAttribute}
               >
                 Adicionar atributo
               </button>
@@ -834,27 +1004,165 @@ export function CanvasPage({ world, onBack }: CanvasPageProps) {
           onClose={() => setSelectedEntity(null)}
         >
           <div className="entity-details">
-            <span className="entity-type">{selectedEntity.entity_type}</span>
-            <span className="entity-details__date">
-              Criado em{" "}
-              {new Date(selectedEntity.created_at).toLocaleDateString()}
-            </span>
-            {Object.keys(selectedEntity.attributes ?? {}).length === 0 ? (
-              <p className="entity-details__empty">
-                Sem atributos cadastrados.
-              </p>
-            ) : (
-              <dl className="entity-details__list">
-                {Object.entries(selectedEntity.attributes ?? {}).map(
-                  ([key, value]) => (
-                    <div key={key} className="entity-details__item">
-                      <dt>{key}</dt>
-                      <dd>{value}</dd>
-                    </div>
-                  )
+            <form className="entity-edit-form" onSubmit={handleEntityUpdate}>
+              <div className="entity-edit-form__grid">
+                <label className="field">
+                  <span>Nome</span>
+                  <input
+                    name="name"
+                    value={entityEditForm.name}
+                    onChange={handleEntityEditFormChange}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Tipo</span>
+                  <select
+                    name="entity_type"
+                    value={entityEditForm.entity_type}
+                    onChange={handleEntityEditFormChange}
+                  >
+                    {ENTITY_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="entity-edit-form__meta">
+                <span className="entity-type entity-edit-form__type-badge">
+                  {entityEditForm.entity_type}
+                </span>
+                <span className="entity-details__date">
+                  Criado em {" "}
+                  {new Date(selectedEntity.created_at).toLocaleDateString()}
+                </span>
+              </div>
+              {entityUpdateError && (
+                <p className="entity-details__error">{entityUpdateError}</p>
+              )}
+              <div className="entity-edit-form__actions">
+                <button type="submit" disabled={isUpdatingEntity}>
+                  {isUpdatingEntity
+                    ? "Salvando dados..."
+                    : "Salvar dados gerais"}
+                </button>
+              </div>
+            </form>
+
+            <form
+              className="entity-attributes-form"
+              onSubmit={handleAttributesUpdate}
+            >
+              <div className="entity-attributes-form__header">
+                <h3>Atributos</h3>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={handleAddEditAttribute}
+                >
+                  Adicionar atributo
+                </button>
+              </div>
+              <div className="entity-attributes-form__list">
+                {editAttributeFields.length === 0 ? (
+                  <p className="entity-details__empty entity-attributes-form__empty">
+                    Sem atributos cadastrados.
+                  </p>
+                ) : (
+                  editAttributeFields.map((field) => {
+                    const isValueLong =
+                      field.value.length > LONG_ATTRIBUTE_THRESHOLD ||
+                      field.value.includes("\n");
+                    const containerClass = isValueLong
+                      ? "attribute-edit-field attribute-edit-field--stacked"
+                      : "attribute-edit-field";
+                    const valueClass = isValueLong
+                      ? "attribute-edit-field__value attribute-edit-field__value--expanded"
+                      : "attribute-edit-field__value";
+                    return (
+                      <div
+                        key={field.id}
+                        className={containerClass}
+                      >
+                        <div className="attribute-edit-field__inputs">
+                          <label>
+                            <span>Nome</span>
+                            <input
+                              value={field.key}
+                              onChange={(event) =>
+                                handleEditAttributeChange(
+                                  field.id,
+                                  "key",
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Ex.: background"
+                            />
+                          </label>
+                          <label className={valueClass}>
+                            <span>Valor</span>
+                            {isValueLong ? (
+                              <textarea
+                                value={field.value}
+                                onChange={(event) =>
+                                  handleEditAttributeChange(
+                                    field.id,
+                                    "value",
+                                    event.target.value
+                                  )
+                                }
+                                rows={Math.min(
+                                  8,
+                                  Math.max(
+                                    3,
+                                    Math.ceil(field.value.length / 60)
+                                  )
+                                )}
+                                placeholder="Descreva o valor"
+                              />
+                            ) : (
+                              <input
+                                value={field.value}
+                                onChange={(event) =>
+                                  handleEditAttributeChange(
+                                    field.id,
+                                    "value",
+                                    event.target.value
+                                  )
+                                }
+                                placeholder="Valor"
+                              />
+                            )}
+                          </label>
+                        </div>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => handleRemoveEditAttribute(field.id)}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    );
+                  })
                 )}
-              </dl>
-            )}
+              </div>
+              {attributesUpdateError && (
+                <p className="entity-details__error">
+                  {attributesUpdateError}
+                </p>
+              )}
+              <div className="entity-attributes-form__actions">
+                <button type="submit" disabled={isUpdatingAttributes}>
+                  {isUpdatingAttributes
+                    ? "Salvando atributos..."
+                    : "Salvar atributos"}
+                </button>
+              </div>
+            </form>
+
             <div className="entity-relations-panel">
               <h3>Relações</h3>
               {selectedEntityRelations.length === 0 ? (

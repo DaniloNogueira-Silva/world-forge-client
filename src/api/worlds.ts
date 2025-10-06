@@ -34,6 +34,15 @@ export type EntityPayload = {
   attributes: Record<string, string>;
 };
 
+export type UpdateEntityPayload = {
+  name?: string;
+  entity_type?: string;
+};
+
+export type UpdateEntityAttributesPayload = {
+  attributes: Record<string, string>;
+};
+
 export type EntityRelationPayload = {
   targetEntityId: string;
   type: EntityRelationType;
@@ -108,6 +117,34 @@ export async function createEntityRelation(
 ): Promise<Entity> {
   const { data } = await axios.post<Entity>(
     `${BASE_URL}/worlds/${worldId}/entities/${entityId}/relations`,
+    payload,
+    authHeader(token)
+  );
+  return data;
+}
+
+export async function updateEntity(
+  token: string,
+  worldId: string,
+  entityId: string,
+  payload: UpdateEntityPayload
+): Promise<Entity> {
+  const { data } = await axios.patch<Entity>(
+    `${BASE_URL}/worlds/${worldId}/entities/${entityId}`,
+    payload,
+    authHeader(token)
+  );
+  return data;
+}
+
+export async function updateEntityAttributes(
+  token: string,
+  worldId: string,
+  entityId: string,
+  payload: UpdateEntityAttributesPayload
+): Promise<Entity> {
+  const { data } = await axios.patch<Entity>(
+    `${BASE_URL}/worlds/${worldId}/entities/${entityId}/attributes`,
     payload,
     authHeader(token)
   );
