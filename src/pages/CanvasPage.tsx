@@ -28,6 +28,7 @@ import { Modal } from "../components/Modal";
 import { IconButton } from "../components/IconButton";
 import {
   forceCenter,
+  forceCollide,
   forceLink,
   forceManyBody,
   forceSimulation,
@@ -96,6 +97,27 @@ function ArrowLeftIcon() {
   );
 }
 
+function MinusIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M20 11a8.1 8.1 0 0 0-15.5-2" />
+      <path d="M4 11V5" />
+      <path d="M4 5h6" />
+      <path d="M4 13a8.1 8.1 0 0 0 15.5 2" />
+      <path d="M20 19v-6" />
+      <path d="M14 19h6" />
+    </svg>
+  );
+}
+
 type CSSVarProperties = CSSProperties & Record<`--${string}`, string | number>;
 
 function hexToRgba(hex: string, alpha: number) {
@@ -121,6 +143,7 @@ const createId = () =>
 
 const CARD_WIDTH = 260;
 const CARD_HEIGHT = 180;
+const CARD_SPACING = 48;
 
 const LONG_ATTRIBUTE_THRESHOLD = 80;
 
@@ -241,6 +264,10 @@ function calculateForceDirectedLayout(
         .distance(CARD_WIDTH + 50)
     )
     .force("charge", forceManyBody().strength(-CARD_WIDTH * 2))
+    .force(
+      "collide",
+      forceCollide(Math.max(CARD_WIDTH, CARD_HEIGHT) / 2 + CARD_SPACING / 2)
+    )
     .force("center", forceCenter(width / 2, height / 2))
     .stop();
 
@@ -248,17 +275,100 @@ function calculateForceDirectedLayout(
 
   const finalPositions: Record<string, CanvasPosition> = {};
   simulation.nodes().forEach((node: any) => {
+    const clampedX = Math.min(
+      Math.max(40, node.x - CARD_WIDTH / 2),
+      Math.max(width - CARD_WIDTH - 40, 40)
+    );
+    const clampedY = Math.min(
+      Math.max(40, node.y - CARD_HEIGHT / 2),
+      Math.max(height - CARD_HEIGHT - 40, 40)
+    );
     finalPositions[node.id] = {
-      x: node.x - CARD_WIDTH / 2,
-      y: node.y - CARD_HEIGHT / 2,
+      x: clampedX,
+      y: clampedY,
     };
   });
 
   return finalPositions;
 }
 
+function rectanglesOverlap(
+  a: CanvasPosition,
+  b: CanvasPosition,
+  padding: number
+) {
+  const expandedA = {
+    left: a.x - padding,
+    right: a.x + CARD_WIDTH + padding,
+    top: a.y - padding,
+    bottom: a.y + CARD_HEIGHT + padding,
+  };
+  const expandedB = {
+    left: b.x - padding,
+    right: b.x + CARD_WIDTH + padding,
+    top: b.y - padding,
+    bottom: b.y + CARD_HEIGHT + padding,
+  };
+
+  return !(
+    expandedA.right <= expandedB.left ||
+    expandedA.left >= expandedB.right ||
+    expandedA.bottom <= expandedB.top ||
+    expandedA.top >= expandedB.bottom
+  );
+}
+
+function findAvailablePosition(
+  existingPositions: Record<string, CanvasPosition>,
+  width: number,
+  height: number
+): CanvasPosition {
+  const attempts = Math.max(200, Object.keys(existingPositions).length * 10);
+  const padding = CARD_SPACING / 2;
+  const centerX = Math.max(0, (width - CARD_WIDTH) / 2);
+  const centerY = Math.max(0, (height - CARD_HEIGHT) / 2);
+
+  const occupied = Object.values(existingPositions);
+
+  const clamp = (value: number, min: number, max: number) =>
+    Math.min(Math.max(value, min), max);
+
+  const maxX = Math.max(0, width - CARD_WIDTH - padding);
+  const maxY = Math.max(0, height - CARD_HEIGHT - padding);
+
+  for (let i = 0; i < attempts; i += 1) {
+    const radius = (i / 6) * (CARD_WIDTH + CARD_SPACING);
+    const angle = (i % 6) * (Math.PI / 3);
+    const candidate = {
+      x: clamp(
+        centerX + Math.cos(angle) * radius,
+        padding,
+        maxX
+      ),
+      y: clamp(
+        centerY + Math.sin(angle) * radius,
+        padding,
+        maxY
+      ),
+    };
+
+    const overlaps = occupied.some((position) =>
+      rectanglesOverlap(candidate, position, padding)
+    );
+
+    if (!overlaps) {
+      return candidate;
+    }
+  }
+
+  return {
+    x: clamp(Math.random() * (width - CARD_WIDTH), padding, maxX),
+    y: clamp(Math.random() * (height - CARD_HEIGHT), padding, maxY),
+  };
+}
+
 export function CanvasPage() {
-  const { token } = useAuth();
+  const { token, logout } = useAuth();
   const { navigate, state } = useRouter();
   const params = useRouteParams();
   const worldId = params.worldId;
@@ -312,9 +422,23 @@ export function CanvasPage() {
   });
   const [isAddingRelation, setIsAddingRelation] = useState(false);
   const [relationError, setRelationError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
 
   const initialLayoutDone = useRef(false);
+  const zoomRef = useRef(1);
   const handleBack = () => navigate("/worlds");
+  const handleLogout = () => {
+    logout();
+    navigate("/", { replace: true });
+  };
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.1, 2));
+  const handleZoomOut = () => setZoom((prev) => Math.max(0.5, prev - 0.1));
+  const handleResetZoom = () => setZoom(1);
 
   useEffect(() => {
     if (!token || !worldId) {
@@ -454,6 +578,15 @@ export function CanvasPage() {
         relations: newEntity.relations ?? {},
       };
       setEntities((prev) => [normalizedEntity, ...prev]);
+      setPositions((prev) => {
+        const canvas = canvasRef.current;
+        const width = canvas?.clientWidth ?? 1200;
+        const height = canvas?.clientHeight ?? 800;
+        return {
+          ...prev,
+          [normalizedEntity.id]: findAvailablePosition(prev, width, height),
+        };
+      });
       setForm({ name: "", entity_type: ENTITY_TYPES[0], attributes: {} });
       setCreateAttributeFields([createAttributeField()]);
       setIsCreateModalOpen(false);
@@ -609,15 +742,13 @@ export function CanvasPage() {
       let changed = false;
       const existingIds = new Set<string>();
 
-      orderedEntities.forEach((entity, index) => {
+      orderedEntities.forEach((entity) => {
         existingIds.add(entity.id);
         if (!next[entity.id]) {
-          const column = index % 4;
-          const row = Math.floor(index / 4);
-          next[entity.id] = {
-            x: 120 + column * 280,
-            y: 120 + row * 220,
-          };
+          const canvas = canvasRef.current;
+          const width = canvas?.clientWidth ?? 1200;
+          const height = canvas?.clientHeight ?? 800;
+          next[entity.id] = findAvailablePosition(next, width, height);
           changed = true;
         }
       });
@@ -643,8 +774,11 @@ export function CanvasPage() {
       event.preventDefault();
 
       const rect = canvas.getBoundingClientRect();
-      const rawX = event.clientX - rect.left - dragOffsetRef.current.x;
-      const rawY = event.clientY - rect.top - dragOffsetRef.current.y;
+      const scale = zoomRef.current || 1;
+      const rawX =
+        (event.clientX - rect.left) / scale - dragOffsetRef.current.x;
+      const rawY =
+        (event.clientY - rect.top) / scale - dragOffsetRef.current.y;
       const maxX = Math.max(0, canvas.clientWidth - CARD_WIDTH);
       const maxY = Math.max(0, canvas.clientHeight - CARD_HEIGHT);
 
@@ -732,9 +866,10 @@ export function CanvasPage() {
 
     const rect = canvas.getBoundingClientRect();
     const currentPosition = positions[entityId] ?? { x: 0, y: 0 };
+    const scale = zoomRef.current || 1;
     dragOffsetRef.current = {
-      x: event.clientX - rect.left - currentPosition.x,
-      y: event.clientY - rect.top - currentPosition.y,
+      x: (event.clientX - rect.left) / scale - currentPosition.x,
+      y: (event.clientY - rect.top) / scale - currentPosition.y,
     };
 
     dragTargetRef.current = event.currentTarget as HTMLElement;
@@ -925,20 +1060,49 @@ export function CanvasPage() {
 
   return (
     <div className="canvas canvas--fullscreen">
-      <aside className="canvas__sidebar">
-        <div className="canvas__sidebar-header">
+      <header className="canvas__navbar">
+        <div className="canvas__navbar-left">
           <button
-            className="secondary canvas__sidebar-back"
+            className="secondary canvas__nav-button"
             type="button"
             onClick={handleBack}
           >
             <ArrowLeftIcon />
-            <span>Voltar</span>
+            <span>Voltar para mundos</span>
           </button>
-          <h1 className="title">{world.name}</h1>
-          <p className="subtitle">{world.description || "Sem descrição"}</p>
+          <div className="canvas__world-info">
+            <h1>{world.name}</h1>
+            <p>{world.description || "Sem descrição"}</p>
+          </div>
         </div>
-        <div className="canvas__sidebar-actions">
+        <div className="canvas__navbar-actions">
+          <div className="canvas__zoom-controls">
+            <button
+              type="button"
+              className="icon-button"
+              onClick={handleZoomOut}
+              aria-label="Diminuir zoom"
+            >
+              <MinusIcon />
+            </button>
+            <span className="canvas__zoom-value">{Math.round(zoom * 100)}%</span>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={handleZoomIn}
+              aria-label="Aumentar zoom"
+            >
+              <PlusIcon />
+            </button>
+            <button
+              type="button"
+              className="icon-button canvas__zoom-reset"
+              onClick={handleResetZoom}
+              aria-label="Restaurar zoom"
+            >
+              <RefreshIcon />
+            </button>
+          </div>
           <button
             type="button"
             className="button-with-icon"
@@ -947,137 +1111,148 @@ export function CanvasPage() {
             <PlusIcon />
             Nova entidade
           </button>
+          <button
+            type="button"
+            className="secondary canvas__nav-button"
+            onClick={handleLogout}
+          >
+            Sair do SaaS
+          </button>
         </div>
-        {worldError && (
-          <p className="error canvas__sidebar-error">{worldError}</p>
-        )}
-        {error && <p className="error">{error}</p>}
-      </aside>
+      </header>
 
       <main className="canvas__surface">
-        <div
-          className="canvas__board"
-          ref={canvasRef}
-          style={{
-            minWidth: boardDimensions.width,
-            minHeight: boardDimensions.height,
-          }}
-        >
-          {isLoading && (
-            <p className="canvas__status">Carregando entidades...</p>
-          )}
-          {!isLoading && orderedEntities.length === 0 && (
-            <p className="canvas__status">Nenhuma entidade criada ainda.</p>
-          )}
-          <svg
-            className="entity-relations"
+        {worldError && <p className="error canvas__world-error">{worldError}</p>}
+        {error && <p className="error canvas__world-error">{error}</p>}
+        <div className="canvas__board-wrapper">
+          <div
+            className="canvas__zoom-container"
             style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              pointerEvents: "none", // Impede que o SVG bloqueie cliques nos cards
+              width: boardDimensions.width * zoom,
+              height: boardDimensions.height * zoom,
             }}
-            width={boardDimensions.width}
-            height={boardDimensions.height}
           >
-            {/* A SEÇÃO <defs> FOI REMOVIDA DAQUI */}
-
-            {relationEdges.map((edge) => {
-              const source = positions[edge.sourceId];
-              const target = positions[edge.targetId];
-              if (!source || !target) return null;
-
-              // 👇 A MUDANÇA PRINCIPAL ACONTECE AQUI
-              // Substituímos o cálculo antigo pela nossa nova função
-              const { start, end } = getEdgeCoordinates(source, target);
-
-              // Coordenadas para o texto da relação (ainda no meio da linha)
-              const labelX = (start.x + end.x) / 2;
-              const labelY = (start.y + end.y) / 2;
-              const color = RELATION_COLORS[edge.type] ?? "#38bdf8";
-
-              return (
-                <g key={edge.id} className="entity-relations__edge">
-                  <line
-                    className="entity-relations__line"
-                    x1={start.x}
-                    y1={start.y}
-                    x2={end.x}
-                    y2={end.y}
-                    stroke={color}
-                    // O ATRIBUTO "markerEnd" FOI REMOVIDO DAQUI
-                  />
-                  <text
-                    className="entity-relations__label"
-                    x={labelX}
-                    y={labelY}
-                    fill={color}
-                    style={{
-                      dominantBaseline: "middle",
-                      textAnchor: "middle",
-                      fontSize: "12px",
-                      fontWeight: "bold",
-                      // Adiciona um contorno sutil para melhorar a legibilidade
-                      paintOrder: "stroke",
-                      stroke: "#1f2937", // Cor de fundo do canvas
-                      strokeWidth: "3px",
-                      strokeLinejoin: "round",
-                    }}
-                  >
-                    {edge.type}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
-          {orderedEntities.map((entity) => {
-            const position = positions[entity.id] ?? { x: 120, y: 120 };
-            const entries = Object.entries(entity.attributes ?? {});
-            const preview = entries.slice(0, 2);
-            const entityColor =
-              ENTITY_TYPE_COLORS[entity.entity_type] ?? ENTITY_TYPE_COLORS.OTHER;
-            const cardStyle: CSSVarProperties = {
-              left: position.x,
-              top: position.y,
-              "--entity-color": entityColor,
-              "--entity-color-soft": hexToRgba(entityColor, 0.22),
-              "--entity-color-strong": hexToRgba(entityColor, 0.45),
-            };
-            return (
-              <article
-                key={entity.id}
-                className="entity-node"
-                style={cardStyle}
-                onPointerDown={(event) => handlePointerDown(event, entity.id)}
-                onClick={(event) => handleEntityClick(event, entity)}
+            <div
+              className="canvas__board"
+              ref={canvasRef}
+              style={{
+                width: boardDimensions.width,
+                height: boardDimensions.height,
+                transform: `scale(${zoom})`,
+                transformOrigin: "top left",
+              }}
+            >
+              {isLoading && (
+                <p className="canvas__status">Carregando entidades...</p>
+              )}
+              {!isLoading && orderedEntities.length === 0 && (
+                <p className="canvas__status">Nenhuma entidade criada ainda.</p>
+              )}
+              <svg
+                className="entity-relations"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  pointerEvents: "none",
+                }}
+                width={boardDimensions.width}
+                height={boardDimensions.height}
               >
-                <header className="entity-node__header">
-                  <h3 title={entity.name}>{entity.name}</h3>
-                  <span className="entity-type">{entity.entity_type}</span>
-                </header>
-                <ul className="entity-node__attributes">
-                  {preview.map(([key, value]) => (
-                    <li key={key}>
-                      <span className="entity-node__label" title={key}>
-                        {key}
-                      </span>
-                      <span className="entity-node__value" title={value}>
-                        {value}
-                      </span>
-                    </li>
-                  ))}
-                  {entries.length === 0 && (
-                    <li className="entity-node__empty">Sem atributos</li>
-                  )}
-                  {entries.length > preview.length && (
-                    <li className="entity-node__more">
-                      +{entries.length - preview.length} atributos
-                    </li>
-                  )}
-                </ul>
-              </article>
-            );
-          })}
+                {relationEdges.map((edge) => {
+                  const source = positions[edge.sourceId];
+                  const target = positions[edge.targetId];
+                  if (!source || !target) return null;
+
+                  const { start, end } = getEdgeCoordinates(source, target);
+
+                  const labelX = (start.x + end.x) / 2;
+                  const labelY = (start.y + end.y) / 2;
+                  const color = RELATION_COLORS[edge.type] ?? "#38bdf8";
+
+                  return (
+                    <g key={edge.id} className="entity-relations__edge">
+                      <line
+                        className="entity-relations__line"
+                        x1={start.x}
+                        y1={start.y}
+                        x2={end.x}
+                        y2={end.y}
+                        stroke={color}
+                      />
+                      <text
+                        className="entity-relations__label"
+                        x={labelX}
+                        y={labelY}
+                        fill={color}
+                        style={{
+                          dominantBaseline: "middle",
+                          textAnchor: "middle",
+                          fontSize: "12px",
+                          fontWeight: "bold",
+                          paintOrder: "stroke",
+                          stroke: "#1f2937",
+                          strokeWidth: "3px",
+                          strokeLinejoin: "round",
+                        }}
+                      >
+                        {edge.type}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+              {orderedEntities.map((entity) => {
+                const position = positions[entity.id] ?? { x: 120, y: 120 };
+                const entries = Object.entries(entity.attributes ?? {});
+                const preview = entries.slice(0, 2);
+                const entityColor =
+                  ENTITY_TYPE_COLORS[entity.entity_type] ??
+                  ENTITY_TYPE_COLORS.OTHER;
+                const cardStyle: CSSVarProperties = {
+                  left: position.x,
+                  top: position.y,
+                  "--entity-color": entityColor,
+                  "--entity-color-soft": hexToRgba(entityColor, 0.22),
+                  "--entity-color-strong": hexToRgba(entityColor, 0.45),
+                };
+                return (
+                  <article
+                    key={entity.id}
+                    className="entity-node"
+                    style={cardStyle}
+                    onPointerDown={(event) => handlePointerDown(event, entity.id)}
+                    onClick={(event) => handleEntityClick(event, entity)}
+                  >
+                    <header className="entity-node__header">
+                      <h3 title={entity.name}>{entity.name}</h3>
+                      <span className="entity-type">{entity.entity_type}</span>
+                    </header>
+                    <ul className="entity-node__attributes">
+                      {preview.map(([key, value]) => (
+                        <li key={key}>
+                          <span className="entity-node__label" title={key}>
+                            {key}
+                          </span>
+                          <span className="entity-node__value" title={value}>
+                            {value}
+                          </span>
+                        </li>
+                      ))}
+                      {entries.length === 0 && (
+                        <li className="entity-node__empty">Sem atributos</li>
+                      )}
+                      {entries.length > preview.length && (
+                        <li className="entity-node__more">
+                          +{entries.length - preview.length} atributos
+                        </li>
+                      )}
+                    </ul>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </main>
 
